@@ -1,0 +1,36 @@
+{
+  "name": "webhook-delivery",
+  "version": "1.0.0",
+  "description": "Reliable webhook delivery engine with HMAC signing, retries, and DLQ",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && mkdir -p dist/ui && cp src/ui/dashboard.html dist/ui/dashboard.html && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",
+    "typecheck": "tsc --noEmit",
+    "start:api": "node dist/server.js",
+    "start:worker": "node dist/worker.js",
+    "dev:api": "tsx watch src/server.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "migrate": "tsx src/db/migrate.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@scalar/fastify-api-reference": "^1.28.0",
+    "bullmq": "^5.41.0",
+    "fastify": "^5.2.1",
+    "ioredis": "^5.5.0",
+    "pg": "^8.13.3",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/pg": "^8.11.11",
+    "pg-mem": "^3.0.14",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}

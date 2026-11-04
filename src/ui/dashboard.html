@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Webhook Delivery Engine</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a222c;
+      --border: #2c3845;
+      --text: #e7eef6;
+      --muted: #8fa3b8;
+      --accent: #3db8a8;
+      --ok: #3ecf8e;
+      --warn: #e6b35a;
+      --bad: #e86a6a;
+      --dead: #9b7bff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #1d3a3a 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #243049 0%, transparent 50%),
+        var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 1.5rem 2rem 0.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.4rem;
+      letter-spacing: 0.02em;
+    }
+
+    .links a {
+      color: var(--accent);
+      text-decoration: none;
+      margin-left: 1rem;
+      font-size: 0.95rem;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 1rem;
+      padding: 1rem 2rem 2rem;
+    }
+
+    @media (max-width: 960px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    section {
+      background: color-mix(in srgb, var(--panel) 92%, black);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+      min-height: 420px;
+    }
+
+    h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.55rem 0.4rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th { color: var(--muted); font-weight: 500; }
+
+    tr.event-row { cursor: pointer; }
+    tr.event-row:hover { background: rgba(61, 184, 168, 0.08); }
+    tr.event-row.active { background: rgba(61, 184, 168, 0.14); }
+
+    .status {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .status.pending, .status.processing { background: rgba(230, 179, 90, 0.2); color: var(--warn); }
+    .status.succeeded { background: rgba(62, 207, 142, 0.18); color: var(--ok); }
+    .status.failed { background: rgba(232, 106, 106, 0.2); color: var(--bad); }
+    .status.dead { background: rgba(155, 123, 255, 0.22); color: var(--dead); }
+
+    .muted { color: var(--muted); font-size: 0.85rem; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.82rem; }
+
+    button {
+      background: var(--accent);
+      color: #062821;
+      border: none;
+      border-radius: 8px;
+      padding: 0.55rem 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    pre {
+      background: #0c1117;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      overflow: auto;
+      max-height: 180px;
+      font-size: 0.8rem;
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 2rem 0;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Webhook Delivery Engine</h1>
+    <div class="links">
+      <a href="/docs">API Docs</a>
+      <a href="/health">Health</a>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div class="toolbar">
+        <h2 style="margin:0; flex:1;">Events</h2>
+        <button type="button" id="refreshBtn">Refresh</button>
+      </div>
+      <div id="eventsEmpty" class="empty">Loading…</div>
+      <table id="eventsTable" hidden>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Target</th>
+            <th>Attempts</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody id="eventsBody"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <div class="toolbar">
+        <h2 style="margin:0; flex:1;">Attempt history</h2>
+        <button type="button" id="retryBtn" disabled>Retry now</button>
+      </div>
+      <div id="detail" class="empty">Select an event to inspect delivery attempts.</div>
+    </section>
+  </main>
+
+  <script>
+    let selectedId = null;
+
+    function statusClass(status) {
+      return `status ${status}`;
+    }
+
+    function shortUrl(url) {
+      try {
+        const u = new URL(url);
+        return u.host + u.pathname;
+      } catch {
+        return url;
+      }
+    }
+
+    function formatTime(value) {
+      if (!value) return '—';
+      return new Date(value).toLocaleString();
+    }
+
+    async function loadEvents() {
+      const res = await fetch('/api/v1/events?limit=50');
+      const data = await res.json();
+      const body = document.getElementById('eventsBody');
+      const table = document.getElementById('eventsTable');
+      const empty = document.getElementById('eventsEmpty');
+      body.innerHTML = '';
+
+      if (!data.events || data.events.length === 0) {
+        table.hidden = true;
+        empty.hidden = false;
+        empty.textContent = 'No events yet. POST to /api/v1/events to enqueue one.';
+        return;
+      }
+
+      empty.hidden = true;
+      table.hidden = false;
+
+      for (const event of data.events) {
+        const tr = document.createElement('tr');
+        tr.className = 'event-row' + (event.id === selectedId ? ' active' : '');
+        tr.dataset.id = event.id;
+        tr.innerHTML = `
+          <td><span class="${statusClass(event.status)}">${event.status}</span></td>
+          <td class="mono" title="${event.targetUrl}">${shortUrl(event.targetUrl)}</td>
+          <td>${event.attemptCount}</td>
+          <td class="muted">${formatTime(event.createdAt)}</td>
+        `;
+        tr.addEventListener('click', () => selectEvent(event.id));
+        body.appendChild(tr);
+      }
+    }
+
+    async function selectEvent(id) {
+      selectedId = id;
+      document.getElementById('retryBtn').disabled = false;
+      await loadEvents();
+      const res = await fetch(`/api/v1/events/${id}`);
+      if (!res.ok) {
+        document.getElementById('detail').innerHTML = '<div class="empty">Failed to load event.</div>';
+        return;
+      }
+      const event = await res.json();
+      const attemptsRows = (event.attempts || []).map((a) => `
+        <tr>
+          <td>#${a.attemptNumber}</td>
+          <td>${a.httpStatus ?? '—'}</td>
+          <td>${a.latencyMs ?? '—'} ms</td>
+          <td class="muted">${a.errorMessage ?? 'ok'}</td>
+          <td class="muted">${formatTime(a.createdAt)}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('detail').innerHTML = `
+        <p class="mono">${event.id}</p>
+        <p><span class="${statusClass(event.status)}">${event.status}</span>
+           <span class="muted"> · attempts ${event.attemptCount}</span></p>
+        <p class="muted">Target: <span class="mono">${event.targetUrl}</span></p>
+        <p class="muted">Next attempt: ${formatTime(event.nextAttemptAt)}</p>
+        <h2 style="margin-top:1.25rem;">Payload</h2>
+        <pre>${JSON.stringify(event.payload, null, 2)}</pre>
+        <h2 style="margin-top:1.25rem;">Attempts</h2>
+        ${attemptsRows
+          ? `<table>
+              <thead>
+                <tr><th>#</th><th>HTTP</th><th>Latency</th><th>Error</th><th>When</th></tr>
+              </thead>
+              <tbody>${attemptsRows}</tbody>
+            </table>`
+          : '<p class="muted">No attempts recorded yet.</p>'}
+      `;
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', () => loadEvents());
+    document.getElementById('retryBtn').addEventListener('click', async () => {
+      if (!selectedId) return;
+      const btn = document.getElementById('retryBtn');
+      btn.disabled = true;
+      await fetch(`/api/v1/events/${selectedId}/retry`, { method: 'POST' });
+      await loadEvents();
+      await selectEvent(selectedId);
+      btn.disabled = false;
+    });
+
+    loadEvents();
+    setInterval(loadEvents, 5000);
+  </script>
+</body>
+</html>
