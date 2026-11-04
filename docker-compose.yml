@@ -5,8 +5,7 @@ services:
       POSTGRES_USER: webhook
       POSTGRES_PASSWORD: webhook
       POSTGRES_DB: webhook_delivery
-    ports:
-      - "5432:5432"
+    # No host ports: only reachable inside the compose network (avoids clashes on :5432).
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,8 +16,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # No host ports: only reachable inside the compose network.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
